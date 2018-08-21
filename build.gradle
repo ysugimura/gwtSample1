@@ -12,7 +12,8 @@
 */
  
 def WAR_NAME = 'sample.war'
- 
+def GWT_VERSION = '2.8.2'
+
 /* プラグインの指定 ==============================================================*/
 apply plugin: 'java'
 apply plugin: 'eclipse'
@@ -84,7 +85,7 @@ dependencies {
    * それらはGWTプラグインによってビルドパスにライブラリとして既に登録されている。
    * 以下の指定はgradleによるサーバコンパイル時とwar/WEB-INF/libに格納することを意図している
    */
-  serverCompile group: 'com.google.gwt', name: 'gwt-servlet', version: '2.8.2'
+  serverCompile group: 'com.google.gwt', name: 'gwt-servlet', version: GWT_VERSION
   serverCompile group: 'javax.servlet', name: 'servlet-api', version: '2.5'
 
 
@@ -101,7 +102,7 @@ dependencies {
 
 /* gwtコンパイラ共通項目 */
 gwt {
-  gwtVersion = '2.8.2'
+  gwtVersion = GWT_VERSION
 }
 tasks.withType(org.wisepersist.gradle.plugins.gwt.GwtCompile) {   
   minHeapSize = "512M";
