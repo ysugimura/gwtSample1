@@ -1,0 +1,293 @@
+/*
+ 1.Eclipse-IDEに必要な設定を行い、Super Dev Modeでの開発をサポートする。以下がある。
+ 1) SourceSetsに記述されたソースオルダをビルドパスに入れる
+ 2) dependenciesに記述された依存ライブラリをビルドパスに入れる。
+　3) GWTプラグインnature等を設定する
+
+ 2.サーブレットコンテナにデプロイするための最終的なwarファイルを作成する   
+ 
+  プロジェクトのソース・ファイルは分割されている。
+ 1)クライアント側とサーバ側で分割し、サーバ側に余計なクラスが入らないようにする。
+ 2)クライアント側の複数のモジュール間のソースを分割し、誤って別のモジュールのクラスを使用しないようにする。
+*/
+ 
+def WAR_NAME = 'sample.war'
+ 
+/* プラグインの指定 ==============================================================*/
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'gwt'
+buildscript {
+  repositories {
+    mavenCentral()
+  }
+  dependencies {
+    // jiakuan版GWTプラグインをロード
+    classpath 'org.wisepersist:gwt-gradle-plugin:1.0.6'
+  }
+}
+
+/* ソースセット ==================================================================*/
+sourceSets {
+  main {
+    java {
+      srcDir 'src_foo'
+      srcDir 'src_bar'
+    }    
+  }
+  server {
+    java {
+      srcDir 'src_shared'
+      srcDir 'src_server'
+    }  
+    resources {
+      srcDir 'src_shared'
+      srcDir 'src_server'
+    }   
+  }
+}
+
+
+/* 依存指定 ===================================================================*/
+
+/* リポジトリ指定 */
+repositories {
+   mavenCentral()
+}
+
+/* コンフィギュレーションの拡張 */
+configurations {
+  /* サーバコードのコンパイルおよびwar/WEB-INF/libへ格納するライブラリとして
+   * compileコンフィギュレーションも使用する
+   */
+  serverCompile.extendsFrom compile
+  
+  /* GWTモジュールのコンパイル用としてcompileコンフィギュレーションも使用する
+   */
+  gwt.extendsFrom compile
+}
+
+/* 依存 */
+dependencies {
+
+  /* testCompileの指定。Eclipseビルドパスの指定されるが、ビルド時には用いられない
+   */
+  testCompile group: 'junit', name: 'junit', version: '4.12'  
+  
+  /* compileの指定
+   * 1.Eclipseビルドパスに指定される
+   * 2.GWTモジュールコンパイルで使用される
+   * 3.サーバコンパイルで使用され、war/WEB-INF/libに格納される
+   */    
+  
+  /* serverCompileに指定したものはeclipseビルドパスには追加しない。
+   * それらはGWTプラグインによってビルドパスにライブラリとして既に登録されている。
+   * 以下の指定はgradleによるサーバコンパイル時とwar/WEB-INF/libに格納することを意図している
+   */
+  serverCompile group: 'com.google.gwt', name: 'gwt-servlet', version: '2.8.2'
+  serverCompile group: 'javax.servlet', name: 'servlet-api', version: '2.5'
+
+
+  /* GWTコンパイルにのみ必要なライブラリを指定する。このライブラリはEclipseのビルドパスに指定される 
+   * (おそらくGWTプラグイン側で何かしているものと思われるのだが、なぜビルドパスに指定されるのかは不明）
+   * gwtコンフィギュレーションはcompileを拡張しているため、GWTのコンパイルにはcompileも使用される。
+   * compileにはGWT-SDKを指定しないが、GWT-SDKはgwt.gwtVersionによって取得されGWTコンパイルに
+   * 使用される。
+  　  */
+  //gwt group: 'javax.inject', name: 'javax.inject', version: '1'
+}
+
+/* GWTモジュールコンパイル =========================================================*/
+
+/* gwtコンパイラ共通項目 */
+gwt {
+  gwtVersion = '2.8.2'
+}
+tasks.withType(org.wisepersist.gradle.plugins.gwt.GwtCompile) {   
+  minHeapSize = "512M";
+  maxHeapSize = "1024M";
+}
+
+/* すべてのモジュールのコンパイル */
+task compileModules(dependsOn: ['compileFooGwt', 'compileBarGwt']);
+
+/* fooモジュールのコンパイル */
+task compileFooGwt(type: org.wisepersist.gradle.plugins.gwt.GwtCompile) {
+  modules = ['com.cm55.gwtSample1.Foo']
+  war = file('war')
+  sourceSets {
+    main {
+      java {
+        srcDir 'src_shared'
+        srcDir 'src_foo'
+      }    
+      resources {
+        srcDir 'src_shared'
+        srcDir 'src_foo'
+      }    
+    }
+  }
+}
+
+/* barモジュールのコンパイル */
+task compileBarGwt(type: org.wisepersist.gradle.plugins.gwt.GwtCompile) {
+  modules = ['com.cm55.gwtSample1.Bar']
+  war = file('war')
+  sourceSets {
+    main {
+      java {
+        srcDir 'src_shared'
+        srcDir 'src_bar'
+      }    
+      resources {
+        srcDir 'src_shared'
+        srcDir 'src_bar'
+      }    
+    }
+  }
+}
+
+/* サーバコード作成とwarファイル  ====================================================*/
+
+/*
+ * サーバ側コードのコンパイル
+ * このcompileServerJavaタスクはserverソースセットを定義すると自動的に作成される。
+ * そのパラメータを変更する。
+ */
+compileServerJava {
+  sourceCompatibility = '1.8'
+  targetCompatibility = '1.8'
+  destinationDir = file('war/WEB-INF/classes')
+}
+tasks.compileServerJava {
+  doFirst {
+    ant {
+      delete dir:'war/WEB-INF/classes'
+    }  
+    file('war/WEB-INF/classes').mkdirs()
+  }
+}
+
+/* warの作成 */
+task war(type: Zip, dependsOn: [  
+  'compileModules', //　全GWTモジュールをコンパイル
+  'compileServerJava', // サーバコードをコンパイル
+  'copyLibs' // ライブラリのコピー
+]) {  
+  description 'サーバコードのみをコンパイルしてwarを作成。GWTモジュールはコンパイル済であるとする'
+  destinationDir = projectDir
+  archiveName = WAR_NAME
+  from 'war'  
+}
+
+/* war/WEB-INF/libへのライブラリコピー */
+task copyLibs(type: Copy) {
+  doFirst {
+    ant {
+      delete dir:'war/WEB-INF/lib'
+    }
+  }
+  from(configurations.serverRuntime)  
+  into "war/WEB-INF/lib"
+}
+  
+/* クリーン =====================================================================*/
+
+clean.doLast {
+  file(WAR_NAME).delete()
+  
+  // war直下の'WEB-INF'以外のフォルダを削除する。つまり、moduleコンパイル結果を削除  
+  file('war').listFiles()
+    .findAll{it.isDirectory() && !it.toString().endsWith('WEB-INF')}
+    .each{
+      delete it
+    }  
+  // war/WEB-INF直下のフォルダを削除する。つまり、deploy, classes, lib
+  file('war/WEB-INF').listFiles()
+    .findAll{it.isDirectory()}
+    .each{
+      delete it
+    }  
+  // その他の不要フォルダ
+  ant {
+    delete dir:'build'
+    delete dir:'gwt-unitCache'
+  }
+}
+
+/* Eclipse-IDEの設定 ===========================================================
+ * 例えばplusConfigurations等を指定する場合には、既にコンフィギュレーションが定義されていなければならない。
+ * このため、少なくともSourceSetsの後である必要がある。
+ */
+eclipse {
+
+  // .projectの修正
+  project {
+    // 追加のnature,buildCommand
+    natures 'org.eclipse.wst.common.project.facet.core.nature'
+    buildCommand 'org.eclipse.wst.common.project.facet.core.builder'
+    buildCommand 'com.gwtplugins.gdt.eclipse.core.webAppProjectValidator'
+  }
+
+  // .classpathの修正  
+  classpath {
+
+    // デフォルトの出力先
+    defaultOutputDir = file('war/WEB-INF/classes')
+    
+    // ライブラリソースもダウンロードする
+    downloadSources = true    
+    
+    // serverCompileの依存ライブラリを入れる場合にはこうする
+    // plusConfigurations += [configurations.serverCompile]
+    
+    // 作成後の.classpathエントリの修正
+    file {
+      whenMerged { cp->
+        cp.entries = fixClassPathEntries(cp.entries);
+      }
+    }
+  }
+}
+
+/* eclipeプラグインが.classpathのエントリを作成した後で修正する。
+ * 作成後の修正。
+ * 1. ソースセットのoutputをnullにしないと、各ソースからの出力.classが意図しない場所になる。
+ * 2. 同じソースセットについて複数のエントリが作成されてしまう。
+ */
+def fixClassPathEntries(entries) {
+  def newEntries = new ArrayList()
+  def uniquePath = new HashSet()
+  entries.findAll{it.kind == 'src'}.each{
+    if (uniquePath.contains(it.path)) return
+    it.output = null
+    newEntries.add(it)
+    uniquePath.add(it.path)          
+  }
+  newEntries.addAll(entries.findAll{it.kind != 'src'})
+  newEntries
+}
+
+/* GWTプラグインにwar/WEB-INF/lib/gwt-servlet.jarを作らせない指定。
+ * GWTプラグインはwar/WEB-INF/libを管理しない。これがなくともSuper Dev Modeは使用できる。
+ * warビルド時にlibフォルダに必要なものが準備される。
+ */
+tasks.eclipse.doLast {
+  new File(".settings/com.gwtplugins.gdt.eclipse.core.prefs").text = 
+   'eclipse.preferences.version=1\n' +
+   'warSrcDir=war\n' +
+   'warSrcDirIsOutput=false'  
+}
+
+/* その他ユーティリティ ============================================================*/
+
+// 全コンフィギュレーションとその依存関係を表示
+task showConfigurations()  { doLast {
+  configurations.getAll().each{ 
+    println it.getName()
+    it.getExtendsFrom().forEach {
+      println "  " + it.getName()
+    }
+  }
+}}
+
